@@ -1,61 +1,61 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    DOCKERHUB_REPO = "tsamodocker2020/backend"
-    GITOPS_BRANCH  = "master"
-    VALUES_FILE    = "envs/local/values.yaml"
-  }
-
-  stages {
-    stage('Checkout') {
-      steps { checkout scm }
+    environment {
+        IMAGE_NAME = "tsamodocker2020/backend"
+        IMAGE_TAG = "1.${BUILD_NUMBER}"
+        DOCKERHUB_CREDS = credentials('dockerhub-creds')
     }
 
-    stage('Build & Push Image') {
-      steps {
-        script {
-          def tag = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-          env.IMAGE_TAG = tag
+    stages {
 
-          withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-            sh """
-              echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-              docker build -t ${DOCKERHUB_REPO}:${IMAGE_TAG} .
-              docker push ${DOCKERHUB_REPO}:${IMAGE_TAG}
-            """
-          }
+        stage('Checkout') {
+            steps {
+                git branch: 'master',
+                url: 'https://github.com/rosine87/backend_k8s.git'
+            }
         }
-      }
-    }
 
-    stage('Update GitOps values.yaml') {
-      steps {
-        dir('gitops-repo') {
-          withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
-            sh """
-              git clone -b ${GITOPS_BRANCH} https://${GH_USER}:${GH_TOKEN}@github.com/rosine87/gitops.git .
-              git config user.email "jenkins@local"
-              git config user.name "jenkins"
-
-              python - <<'PY'
-import yaml
-path = "${VALUES_FILE}"
-with open(path) as f:
-    data = yaml.safe_load(f)
-data["backend"]["image"]["tag"] = "${IMAGE_TAG}"
-with open(path, "w") as f:
-    yaml.safe_dump(data, f, sort_keys=False)
-print("Updated", path, "backend.tag =", "${IMAGE_TAG}")
-PY
-
-              git add ${VALUES_FILE}
-              git commit -m "chore(gitops): backend -> ${IMAGE_TAG} [skip ci]" || true
-              git push origin ${GITOPS_BRANCH}
-            """
-          }
+        stage('Build Docker image') {
+            steps {
+                sh '''
+                docker build -t $IMAGE_NAME:$IMAGE_TAG .
+                '''
+            }
         }
-      }
+
+        stage('Login DockerHub') {
+            steps {
+                sh '''
+                echo $DOCKERHUB_CREDS_PSW | docker login -u $DOCKERHUB_CREDS_USR --password-stdin
+                '''
+            }
+        }
+
+        stage('Push image') {
+            steps {
+                sh '''
+                docker push $IMAGE_NAME:$IMAGE_TAG
+                '''
+            }
+        }
+
+        stage('Update GitOps values.yaml') {
+            steps {
+                sh '''
+                git clone https://github.com/rosine87/gitops.git
+                cd gitops/envs/local
+
+                sed -i "s/tag:.*/tag: \\"$IMAGE_TAG\\"/g" values.yaml
+
+                git config user.email "jenkins@ci.com"
+                git config user.name "jenkins"
+
+                git add values.yaml
+                git commit -m "Update backend image to $IMAGE_TAG"
+                git push https://$DOCKERHUB_CREDS_USR:$DOCKERHUB_CREDS_PSW@github.com/rosine87/gitops.git
+                '''
+            }
+        }
     }
-  }
 }
