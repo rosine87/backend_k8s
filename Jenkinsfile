@@ -40,30 +40,35 @@ pipeline {
             }
         }
 
-        stage('Update GitOps values.yaml') {
-            steps {
-                dir('gitops') {
-                checkout([$class: 'GitSCM',
-                    branches: [[name: '*/master']],
-                    userRemoteConfigs: [[
-                    url: 'https://github.com/rosine87/gitops.git',
-                    credentialsId: 'credentials_github'
-                    ]]
-                ])
+       stage('Update GitOps values.yaml') {
+                steps {
+                    dir('gitops') {
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: '*/master']],
+                        userRemoteConfigs: [[
+                        url: 'https://github.com/rosine87/gitops.git',
+                        credentialsId: 'credentials_github'
+                        ]]
+                    ])
 
-                sh '''
-                    sed -i "s|tag: \\".*\\"|tag: \\"${IMAGE_TAG}\\"|g" envs/local/values.yaml
+                    sh '''
+                        sed -i "s|tag: \\".*\\"|tag: \\"${IMAGE_TAG}\\"|g" envs/local/values.yaml
 
-                    git config user.email "jenkins@ci.local"
-                    git config user.name "jenkins"
+                        git config user.email "jenkins@ci.local"
+                        git config user.name "jenkins"
 
-                    git add envs/local/values.yaml
-                    git commit -m "chore(gitops): backend -> ${IMAGE_TAG}" || true
+                        git add envs/local/values.yaml
+                        git commit -m "chore(gitops): backend -> ${IMAGE_TAG}" || true
+                    '''
 
-                    git push origin HEAD:master
-                '''
+                    withCredentials([usernamePassword(credentialsId: 'credentials_github', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
+                        sh '''
+                        git remote set-url origin https://${GH_USER}:${GH_TOKEN}@github.com/rosine87/gitops.git
+                        git push origin HEAD:master
+                        '''
+                    }
+                    }
                 }
-            }
         }
 
     }
