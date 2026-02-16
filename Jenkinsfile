@@ -40,7 +40,7 @@ pipeline {
             }
         }
 
-      stage('Update GitOps values.yaml') {
+     stage('Update GitOps values.yaml') {
             steps {
                 withCredentials([usernamePassword(
                 credentialsId: 'credentials_github',
@@ -49,29 +49,34 @@ pipeline {
                 )]) {
                 sh '''
                     set -e
-                    
-                    echo "Cloning GitOps repo..."
+
                     rm -rf gitops
                     git clone https://github.com/rosine87/gitops.git
                     cd gitops
 
-                    echo "Configure git identity"
                     git config user.email "jenkins@local"
                     git config user.name "jenkins"
 
-                    echo "Update backend image tag in values.yaml"
-                    sed -i "s/tag:.*/tag: \\"${IMAGE_TAG}\\"/g" envs/local/values.yaml
+                    # Update tag
+                    sed -i "s|tag: \\".*\\"|tag: \\"${IMAGE_TAG}\\"|g" envs/local/values.yaml
 
-                    echo "Show diff"
-                    git diff
-
-                    echo "Commit change"
                     git add envs/local/values.yaml
                     git commit -m "chore(gitops): backend -> ${IMAGE_TAG}" || echo "No changes"
 
-                    echo "Push using GitHub PAT"
-                    git remote set-url origin https://${GIT_USER}:${GIT_TOKEN}@github.com/rosine87/gitops.git
-                    git push origin HEAD:master
+                    # --- SAFE PUSH (no token in URL) ---
+                    cat > /tmp/git-askpass.sh <<'EOF'
+            #!/bin/sh
+            case "$1" in
+            Username*) echo "$GIT_USER" ;;
+            Password*) echo "$GIT_TOKEN" ;;
+            esac
+            EOF
+                    chmod +x /tmp/git-askpass.sh
+
+                    export GIT_ASKPASS=/tmp/git-askpass.sh
+                    export GIT_TERMINAL_PROMPT=0
+
+                    git push https://github.com/rosine87/gitops.git HEAD:master
                 '''
                 }
             }
