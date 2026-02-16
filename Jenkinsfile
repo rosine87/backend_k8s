@@ -52,8 +52,6 @@ pipeline {
                 ])
 
                 sh '''
-                    echo "Updating values.yaml with new image tag..."
-
                     sed -i "s|tag: \\".*\\"|tag: \\"${IMAGE_TAG}\\"|g" envs/local/values.yaml
 
                     git config user.email "jenkins@ci.local"
@@ -61,10 +59,12 @@ pipeline {
 
                     git add envs/local/values.yaml
                     git commit -m "chore(gitops): backend -> ${IMAGE_TAG}" || true
-                    git push origin master
+
+                    git push origin HEAD:master
                 '''
                 }
             }
         }
+
     }
 }
