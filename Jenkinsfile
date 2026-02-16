@@ -42,13 +42,18 @@ pipeline {
 
         stage('Update GitOps values.yaml') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'credentials_github', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
-                sh """
-                    rm -rf gitops
-                    git clone https://${GH_USER}:${GH_TOKEN}@github.com/rosine87/gitops.git
-                    cd gitops
+                dir('gitops') {
+                checkout([$class: 'GitSCM',
+                    branches: [[name: '*/master']],
+                    userRemoteConfigs: [[
+                    url: 'https://github.com/rosine87/gitops.git',
+                    credentialsId: 'credentials_github'
+                    ]]
+                ])
 
-                    # update backend image tag in envs/local/values.yaml
+                sh '''
+                    echo "Updating values.yaml with new image tag..."
+
                     sed -i "s|tag: \\".*\\"|tag: \\"${IMAGE_TAG}\\"|g" envs/local/values.yaml
 
                     git config user.email "jenkins@ci.local"
@@ -57,7 +62,7 @@ pipeline {
                     git add envs/local/values.yaml
                     git commit -m "chore(gitops): backend -> ${IMAGE_TAG}" || true
                     git push origin master
-                """
+                '''
                 }
             }
         }
